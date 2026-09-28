@@ -7,7 +7,11 @@ import nodemailer from 'nodemailer';
 import { promises as fs } from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import dns from 'dns';
 import { extractFileText, normalizeUploadedFilename } from './textExtract.js';
+
+// 强制 IPv4 优先：smtp.163.com 等国内邮件服务器常解析出境外不可达的 IPv6 地址
+dns.setDefaultResultOrder('ipv4first');
 
 dotenv.config();
 
