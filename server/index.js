@@ -682,7 +682,18 @@ app.post('/api/chat', async (req, res, next) => {
     const historyText = history
       .map((item) => `${item?.role === 'assistant' ? 'AI' : '用户'}：${String(item?.content || '')}`)
       .join('\n');
+    const nowLabel = new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      weekday: 'long',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(new Date());
     const contextBlock = [
+      `当前日期时间：${nowLabel}（北京时间 UTC+8，回答日期、星期、时间类问题时以此为准）`,
       materialName ? `当前资料名：${materialName}` : '当前资料名：未选择',
       notes ? `老师补充笔记：\n${notes}` : '老师补充笔记：无',
       materialText ? `当前资料内容摘录：\n${materialText}` : '当前资料内容摘录：无',
@@ -691,7 +702,10 @@ app.post('/api/chat', async (req, res, next) => {
     ].join('\n\n');
 
     const answer = await askAIPlainText(
-      '你是“AI期末复习助手”的实时答疑教练。请用中文简洁回答，优先结合用户给出的资料内容；若资料里没有明确答案，要先明确说明“资料未覆盖此点”，再给出通用理解框架。回答尽量结构化、可直接用于复习，不要输出 JSON。',
+      '你是”AI期末复习助手”的智能学习助教，服务中国大学生。请用中文直接、完整地回答用户问题：\n'
+      + '1. 问题与当前资料相关时，优先基于资料内容回答，并指出对应知识点；若资料中确实缺少依据，可简要说明”资料未覆盖此点”，再结合通用知识补全答案。\n'
+      + '2. 问题与资料无关时（如学科概念、作业题、学习方法、考试技巧等），直接利用你的知识给出准确、可用的答案，不要输出思考过程或只给框架，不要强调”资料未覆盖”。\n'
+      + '3. 回答尽量结构化、便于复习，不要输出 JSON。',
       contextBlock,
     );
     res.json({ answer });
