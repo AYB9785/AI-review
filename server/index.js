@@ -36,6 +36,9 @@ const mailTransporter = canSendMail
       host: smtpHost,
       port: smtpPort,
       secure: smtpSecure,
+      connectionTimeout: 10000,
+      socketTimeout: 15000,
+      greetingTimeout: 10000,
       auth: {
         user: smtpUser,
         pass: smtpPass,
