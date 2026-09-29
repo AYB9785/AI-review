@@ -3,6 +3,7 @@ import { api } from './lib/api.js';
 export function createApp(root) {
   const STORAGE_KEY = 'rv4';
   const SESSION_KEY = 'rv4_session_email';
+  const GUEST_KEY = 'rv4_guest';
   const tabs = [
     ['dashboard', '资料总览'],
     ['library', '上传资料'],
@@ -218,8 +219,8 @@ export function createApp(root) {
   };
 
   const userStorageKey = (email) => `${STORAGE_KEY}_${email}`;
+  const currentStorageKey = () => (isLoggedIn() ? userStorageKey(state.auth.user.email) : GUEST_KEY);
   const save = () => {
-    if (!isLoggedIn()) return;
     const data = {
       files: state.files,
       selectedFileId: state.selectedFileId,
@@ -238,14 +239,13 @@ export function createApp(root) {
       dismissedMistakes: state.dismissedMistakes,
       aiChatMessages: state.aiChatMessages,
     };
-    localStorage.setItem(userStorageKey(state.auth.user.email), JSON.stringify(data));
+    localStorage.setItem(currentStorageKey(), JSON.stringify(data));
   };
   const load = () => {
     const sessionEmail = localStorage.getItem(SESSION_KEY);
     state.auth.user = sessionEmail ? { email: sessionEmail } : null;
-    if (!state.auth.user) return;
     try {
-      Object.assign(state, JSON.parse(localStorage.getItem(userStorageKey(state.auth.user.email)) || '{}'));
+      Object.assign(state, JSON.parse(localStorage.getItem(currentStorageKey()) || '{}'));
     } catch {}
     state.files = state.files || [];
     state.quizHistory = state.quizHistory || [];
@@ -310,13 +310,36 @@ export function createApp(root) {
     render();
   }
 
-  function ensureAuth(tip = '请先登录后再使用其他功能') {
-    if (isLoggedIn()) return true;
-    state.auth.mode = 'login';
-    location.hash = '#auth';
-    state.route = 'auth';
-    showToast(tip);
-    return false;
+  /** 访客数据（未登录时产生的资料/刷题/卡片记录）合并进账号存储 */
+  function mergeGuestDataIntoAccount(email) {
+    const guestRaw = localStorage.getItem(GUEST_KEY);
+    if (!guestRaw) return;
+    let guest = {};
+    try {
+      guest = JSON.parse(guestRaw);
+    } catch {
+      return;
+    }
+    const userKey = userStorageKey(email);
+    let existing = {};
+    try {
+      existing = JSON.parse(localStorage.getItem(userKey) || '{}');
+    } catch {}
+    const mergeById = (base, extra) => {
+      const seen = new Set((base || []).map((item) => item?.id));
+      return [...(base || []), ...(extra || []).filter((item) => item?.id && !seen.has(item.id))];
+    };
+    const merged = {
+      ...guest,
+      ...existing,
+      files: mergeById(existing.files, guest.files),
+      quizHistory: mergeById(existing.quizHistory, guest.quizHistory),
+      cardsHistory: mergeById(existing.cardsHistory, guest.cardsHistory),
+      dismissedMistakes: Array.from(new Set([...(existing.dismissedMistakes || []), ...(guest.dismissedMistakes || [])])),
+      settings: { ...(guest.settings || {}), ...(existing.settings || {}) },
+    };
+    localStorage.setItem(userKey, JSON.stringify(merged));
+    localStorage.removeItem(GUEST_KEY);
   }
 
   async function loginWithEmail(email, password) {
@@ -326,6 +349,7 @@ export function createApp(root) {
       state.auth.user = { email: data.user.email };
       state.auth.loginPassword = '';
       state.error = '';
+      mergeGuestDataIntoAccount(data.user.email);
       load();
       save();
       location.hash = '#dashboard';
@@ -344,6 +368,7 @@ export function createApp(root) {
       state.auth.registerCodeSentAt = '';
       state.auth.registerCodeCooldownUntil = 0;
       state.error = '';
+      mergeGuestDataIntoAccount(data.user.email);
       save();
       location.hash = '#dashboard';
       showToast('注册并登录成功');
@@ -568,7 +593,6 @@ export function createApp(root) {
   }
 
   async function upload(files) {
-    if (!ensureAuth()) return;
     const list = Array.from(files || []).filter((f) => f && f.size > 0);
     if (!list.length) return;
     await run('正在上传并解析资料...', async () => {
@@ -594,7 +618,6 @@ export function createApp(root) {
   }
 
   function selectFile(id) {
-    if (!ensureAuth()) return;
     if (state.loading) return;
     state.selectedFileId = id;
     save();
@@ -602,7 +625,6 @@ export function createApp(root) {
   }
 
   function removeFile(id) {
-    if (!ensureAuth()) return;
     if (state.loading) return;
     state.files = state.files.filter((file) => file.id !== id);
     if (state.plansByFileId[id]) {
@@ -618,7 +640,6 @@ export function createApp(root) {
   }
 
   async function createFocus() {
-    if (!ensureAuth()) return;
     if (!ensureSelectedFile()) return;
     await run('正在提炼重点...', async () => {
       state.focus = await api.focus({ materialText: getSelectedText(), notes: state.settings.notes });
@@ -626,7 +647,6 @@ export function createApp(root) {
   }
 
   async function createCards() {
-    if (!ensureAuth()) return;
     if (!ensureSelectedFile()) return;
     await run('正在生成卡片...', async () => {
       if (!state.focus) {
@@ -646,7 +666,6 @@ export function createApp(root) {
   }
 
   async function createQuiz() {
-    if (!ensureAuth()) return;
     if (!ensureSelectedFile()) return;
     await run('正在生成题目...', async () => {
       state.quiz = await api.quiz({
@@ -660,7 +679,6 @@ export function createApp(root) {
   }
 
   async function analyzeQuiz() {
-    if (!ensureAuth()) return;
     if (!getQuestions().length) {
       showError('请先生成题目');
       return;
@@ -707,14 +725,12 @@ export function createApp(root) {
   }
 
   function removeMistakeRecord(mistakeKey) {
-    if (!ensureAuth()) return;
     if (!mistakeKey) return;
     state.pendingDeleteMistakeKey = String(mistakeKey);
     render();
   }
 
   function confirmRemoveMistakeRecord() {
-    if (!ensureAuth()) return;
     const key = String(state.pendingDeleteMistakeKey || '');
     if (!key) return;
     state.pendingDeleteMistakeKey = '';
@@ -732,7 +748,6 @@ export function createApp(root) {
   }
 
   async function createPlan() {
-    if (!ensureAuth()) return;
     if (!ensureSelectedFile()) return;
     await run('正在生成复习计划...', async () => {
       if (!state.focus) {
@@ -1186,8 +1201,8 @@ export function createApp(root) {
                <button class="ghost-btn" data-a="logout">退出登录</button>
                <button class="ghost-btn danger-btn" data-a="delete-account">注销账号</button>
              </div>`
-          : `<div class="result-box"><strong>当前未登录</strong><p class="muted">你可以先浏览所有页面，使用具体功能时请先登录/注册。</p></div>
-             <div class="action-stack top-gap"><a href="#auth" class="gradient-btn">前往登录注册</a></div>`,
+          : `<div class="result-box"><strong>当前为访客模式</strong><p class="muted">未登录也可使用全部功能，数据保存在本机；登录后自动合并到你的账号。</p></div>
+             <div class="action-stack top-gap"><a href="#auth" class="gradient-btn">登录 / 注册</a></div>`,
       )}`,
 
       auth: `<section class="auth-view">
@@ -1298,7 +1313,7 @@ export function createApp(root) {
           <small>当前资料</small>
           <strong>${selected ? escapeHtml(selected.name) : '未选择'}</strong>
           <small>当前账号</small>
-          <strong>${isLoggedIn() ? escapeHtml(state.auth.user.email) : '未登录'}</strong>
+          <strong>${isLoggedIn() ? escapeHtml(state.auth.user.email) : '访客模式'}</strong>
           <small>刷题记录</small>
           <strong>${state.quizHistory.length} 次</strong>
         </div>
@@ -1622,7 +1637,6 @@ export function createApp(root) {
       save();
     }
     if (event.target.dataset.filter === 'mistakes') {
-      if (!ensureAuth()) return;
       state.mistakesFilter = event.target.value;
       save();
       render();
