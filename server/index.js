@@ -35,20 +35,36 @@ const mailFrom = process.env.MAIL_FROM || smtpUser;
 const canSendMail = Boolean(smtpHost && smtpUser && smtpPass && mailFrom);
 const MAX_AI_INPUT_CHARS = Number(process.env.AI_INPUT_MAX_CHARS || 18000);
 
-const mailTransporter = canSendMail
-  ? nodemailer.createTransport({
-      host: smtpHost,
+let mailTransporter = null;
+let mailInit = Promise.resolve();
+
+if (canSendMail) {
+  // 强制用 IPv4 地址连接：smtp.163.com 常解析出境外不可达的 IPv6 地址（ENETUNREACH）
+  mailInit = (async () => {
+    let host = smtpHost;
+    let servername = undefined;
+    try {
+      const addrs = await dns.promises.resolve4(smtpHost);
+      if (addrs && addrs.length) {
+        host = addrs[0];
+        servername = smtpHost; // SNI 保持域名，保证 TLS 证书校验通过
+      }
+    } catch {}
+    mailTransporter = nodemailer.createTransport({
+      host,
       port: smtpPort,
       secure: smtpSecure,
       connectionTimeout: 10000,
       socketTimeout: 15000,
       greetingTimeout: 10000,
+      tls: servername ? { servername } : undefined,
       auth: {
         user: smtpUser,
         pass: smtpPass,
       },
-    })
-  : null;
+    });
+  })();
+}
 
 const client = hasApiKey
   ? new OpenAI({
@@ -140,7 +156,8 @@ function ensureStrongEnoughPassword(password = '') {
   }
 }
 
-function ensureMailerReady() {
+async function ensureMailerReady() {
+  await mailInit;
   if (!mailTransporter) {
     const error = new Error('邮件服务未配置，请在 .env 中设置 SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS/MAIL_FROM');
     error.status = 500;
@@ -346,7 +363,7 @@ app.post('/api/auth/register', async (req, res, next) => {
 
 app.post('/api/auth/send-register-code', async (req, res, next) => {
   try {
-    ensureMailerReady();
+    await ensureMailerReady();
     const email = normalizeEmail(req.body?.email);
     if (!isValidEmail(email)) {
       const error = new Error('请输入有效邮箱');
@@ -453,7 +470,7 @@ app.post('/api/auth/login', async (req, res, next) => {
 
 app.post('/api/auth/send-reset-code', async (req, res, next) => {
   try {
-    ensureMailerReady();
+    await ensureMailerReady();
     const email = normalizeEmail(req.body?.email);
     if (!isValidEmail(email)) {
       const error = new Error('请输入有效邮箱');
