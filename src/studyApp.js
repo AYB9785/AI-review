@@ -22,7 +22,7 @@ export function createApp(root) {
     loadingText: '处理中...',
     error: '',
     files: [],
-    selectedFileId: null,
+    selectedFileIds: [],
     focus: null,
     cards: null,
     quiz: null,
@@ -59,7 +59,7 @@ export function createApp(root) {
       difficulty: '中等',
       count: 6,
     },
-    mistakesFilter: 'all',
+    mistakesFilter: [],
     dismissedMistakes: [],
     sidebarOpen: false,
     aiChatOpen: false,
@@ -90,8 +90,13 @@ export function createApp(root) {
   const registerCodeLeft = () => cooldownSeconds(state.auth.registerCodeCooldownUntil);
   const forgotCodeLeft = () => cooldownSeconds(state.auth.forgotCodeCooldownUntil);
 
-  const getSelectedFile = () => state.files.find((file) => file.id === state.selectedFileId) || null;
-  const getSelectedText = () => getSelectedFile()?.text?.trim() || '';
+  const getSelectedFiles = () => state.files.filter((file) => (state.selectedFileIds || []).includes(file.id));
+  const getSelectedFile = () => getSelectedFiles()[0] || null;
+  const getSelectedText = () =>
+    getSelectedFiles()
+      .map((file) => `【${file.name}】\n${file.text || ''}`)
+      .join('\n\n')
+      .trim();
   const getQuestions = () => state.quiz?.questions || [];
   const normalizeOptionText = (value) => String(value || '').replace(/^[A-Ha-h][\.\s、:：）\)]*/, '').trim();
   const normalizeChoiceToken = (value) =>
@@ -223,7 +228,7 @@ export function createApp(root) {
   const save = () => {
     const data = {
       files: state.files,
-      selectedFileId: state.selectedFileId,
+      selectedFileIds: state.selectedFileIds,
       focus: state.focus,
       cards: state.cards,
       quiz: state.quiz,
@@ -252,6 +257,13 @@ export function createApp(root) {
     state.cardsHistory = state.cardsHistory || [];
     state.answers = state.answers || {};
     state.dismissedMistakes = Array.isArray(state.dismissedMistakes) ? state.dismissedMistakes : [];
+    if (!Array.isArray(state.selectedFileIds)) {
+      state.selectedFileIds = state.selectedFileId ? [state.selectedFileId] : [];
+    }
+    delete state.selectedFileId;
+    if (!Array.isArray(state.mistakesFilter)) {
+      state.mistakesFilter = !state.mistakesFilter || state.mistakesFilter === 'all' ? [] : [state.mistakesFilter];
+    }
     state.settings = {
       examDate: '',
       notes: '',
@@ -266,7 +278,7 @@ export function createApp(root) {
         : {};
     const legacyPlan = state.plan;
     if (legacyPlan && typeof legacyPlan === 'object') {
-      const fid = state.selectedFileId || state.files[0]?.id;
+      const fid = state.selectedFileIds?.[0] || state.files[0]?.id;
       if (fid && state.plansByFileId[fid] == null) state.plansByFileId[fid] = legacyPlan;
     }
     delete state.plan;
@@ -284,7 +296,7 @@ export function createApp(root) {
 
   function resetUserRuntimeState() {
     state.files = [];
-    state.selectedFileId = null;
+    state.selectedFileIds = [];
     state.focus = null;
     state.cards = null;
     state.quiz = null;
@@ -295,7 +307,7 @@ export function createApp(root) {
     state.selectedHistoryId = null;
     state.cardsHistory = [];
     state.selectedCardHistoryId = null;
-    state.mistakesFilter = 'all';
+    state.mistakesFilter = [];
     state.dismissedMistakes = [];
   }
 
@@ -530,7 +542,7 @@ export function createApp(root) {
     if (ds.file && el.matches?.('input[type="radio"], input[type="checkbox"]')) {
       return { kind: 'css', sel: `input[data-file="${CSS.escape(ds.file)}"]` };
     }
-    if (ds.filter === 'mistakes') return { kind: 'css', sel: 'select[data-filter="mistakes"]' };
+    if (ds.filter === 'mistakes') return { kind: 'css', sel: 'input[data-filter="mistakes"]' };
     return null;
   }
 
@@ -575,8 +587,8 @@ export function createApp(root) {
   }
 
   function ensureSelectedFile() {
-    if (!getSelectedFile()) {
-      showError('请先去资料页选择一份资料（每次仅支持1份）');
+    if (!getSelectedFiles().length) {
+      showError('请先在资料页选择至少一份资料');
       return false;
     }
     return true;
@@ -611,15 +623,16 @@ export function createApp(root) {
         }
       }
       state.files = [...state.files, ...aggregated];
-      if (!state.selectedFileId && aggregated[0]) state.selectedFileId = aggregated[0].id;
+      state.selectedFileIds = [...new Set([...(state.selectedFileIds || []), ...aggregated.map((f) => f.id)])];
     });
     const input = document.getElementById('file-upload');
     if (input) input.value = '';
   }
 
-  function selectFile(id) {
+  function toggleSelectFile(id) {
     if (state.loading) return;
-    state.selectedFileId = id;
+    const current = state.selectedFileIds || [];
+    state.selectedFileIds = current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
     save();
     render();
   }
@@ -632,9 +645,7 @@ export function createApp(root) {
       delete nextPlans[id];
       state.plansByFileId = nextPlans;
     }
-    if (state.selectedFileId === id) {
-      state.selectedFileId = state.files[0]?.id || null;
-    }
+    state.selectedFileIds = (state.selectedFileIds || []).filter((x) => x !== id);
     save();
     render();
   }
@@ -653,12 +664,12 @@ export function createApp(root) {
         state.focus = await api.focus({ materialText: getSelectedText(), notes: state.settings.notes });
       }
       state.cards = await api.cards({ materialText: getSelectedText(), focus: state.focus });
-      const selected = getSelectedFile();
+      const selectedFiles = getSelectedFiles();
       const record = {
         id: `c_${Date.now()}`,
         time: new Date().toLocaleString('zh-CN', { hour12: false }),
-        fileId: selected?.id,
-        fileName: selected?.name || '未知资料',
+        fileId: selectedFiles.map((f) => f.id).sort().join('|'),
+        fileName: selectedFiles.map((f) => f.name).join('、') || '未知资料',
         cards: state.cards,
       };
       state.cardsHistory.unshift(record);
@@ -689,12 +700,12 @@ export function createApp(root) {
         answers: getQuestions().map((q) => ({ id: q.id, answer: state.answers[q.id] || '' })),
         materialText: getSelectedText(),
       });
-      const selected = getSelectedFile();
+      const selectedFiles = getSelectedFiles();
       const item = {
         id: `h_${Date.now()}`,
         time: new Date().toLocaleString('zh-CN', { hour12: false }),
-        fileId: selected?.id,
-        fileName: selected?.name || '未知资料',
+        fileId: selectedFiles.map((f) => f.id).sort().join('|'),
+        fileName: selectedFiles.map((f) => f.name).join('、') || '未知资料',
         questions: getQuestions(),
         analysis: state.analysis,
         answers: { ...state.answers },
@@ -721,7 +732,12 @@ export function createApp(root) {
           })),
       )
       .filter((m) => !dismissedSet.has(m.mistakeKey))
-      .filter((m) => state.mistakesFilter === 'all' || m.fileId === state.mistakesFilter);
+      .filter((m) => {
+        const filter = state.mistakesFilter || [];
+        if (!filter.length) return true;
+        const recordFileIds = String(m.fileId || '').split('|').filter(Boolean);
+        return recordFileIds.some((id) => filter.includes(id));
+      });
   }
 
   function removeMistakeRecord(mistakeKey) {
@@ -753,7 +769,7 @@ export function createApp(root) {
       if (!state.focus) {
         state.focus = await api.focus({ materialText: getSelectedText(), notes: state.settings.notes });
       }
-      const fileId = state.selectedFileId;
+      const fileId = getSelectedFiles().map((f) => f.id).sort().join('|');
       state.plansByFileId = {
         ...state.plansByFileId,
         [fileId]: await api.plan({
@@ -774,7 +790,7 @@ export function createApp(root) {
       showError('请输入你想问的问题');
       return;
     }
-    const selected = getSelectedFile();
+    const selectedFiles = getSelectedFiles();
     const userMessage = { role: 'user', content: message, time: Date.now() };
     state.aiChatMessages = [...state.aiChatMessages, userMessage];
     state.aiChatDraft = '';
@@ -785,7 +801,7 @@ export function createApp(root) {
     try {
       const data = await api.chat({
         message,
-        materialName: selected?.name || '',
+        materialName: selectedFiles.map((f) => f.name).join('、'),
         materialText: getSelectedText(),
         notes: state.settings.notes || '',
         history: state.aiChatMessages.slice(-8),
@@ -823,16 +839,16 @@ export function createApp(root) {
     aiChatAbortController?.abort();
   }
 
-  function renderFilePicker(title, actions = '', mode = 'single') {
-    const selectedFile = getSelectedFile();
+  function renderFilePicker(title, actions = '') {
+    const selectedIds = state.selectedFileIds || [];
     return card(
       `<div class="panel-head"><div><p class="section-tag">资料选择</p><h3>${title}</h3></div></div>`,
       `<div class="pick-list">${
         state.files.length
           ? state.files
               .map(
-                (file) => `<label class="pick ${selectedFile?.id === file.id ? 'on' : ''}">
-            <input type="${mode === 'single' ? 'radio' : 'checkbox'}" name="pick-file" data-file="${file.id}" ${selectedFile?.id === file.id ? 'checked' : ''}>
+                (file) => `<label class="pick ${selectedIds.includes(file.id) ? 'on' : ''}">
+            <input type="checkbox" name="pick-file" data-file="${file.id}" ${selectedIds.includes(file.id) ? 'checked' : ''}>
             <span class="file-meta">
               <span class="file-name">${escapeHtml(file.name)}</span>
               <span class="file-size">${formatFileSize(file.size)}</span>
@@ -846,16 +862,21 @@ export function createApp(root) {
   }
 
   function renderPages() {
-    const selectedFile = getSelectedFile();
-    const planForSelected = selectedFile && state.plansByFileId?.[selectedFile.id] ? state.plansByFileId[selectedFile.id] : null;
+    const selectedFiles = getSelectedFiles();
+    const planKey = selectedFiles.map((f) => f.id).sort().join('|');
+    const planForSelected = planKey
+      ? state.plansByFileId?.[planKey] || (selectedFiles.length === 1 ? state.plansByFileId?.[selectedFiles[0].id] : null)
+      : null;
     const mistakes = getMistakes();
-    const mistakeFilterOptions = ['<option value="all">全部资料</option>']
-      .concat(
-        state.files.map(
-          (file) => `<option value="${file.id}" ${state.mistakesFilter === file.id ? 'selected' : ''}>${escapeHtml(file.name)}</option>`,
-        ),
+    const mistakeFilterOptions = `<label class="pick"><input type="checkbox" value="all" data-filter="mistakes" ${
+      !(state.mistakesFilter || []).length ? 'checked' : ''
+    }><span>全部资料</span></label>${state.files
+      .map(
+        (file) => `<label class="pick"><input type="checkbox" value="${file.id}" data-filter="mistakes" ${
+          (state.mistakesFilter || []).includes(file.id) ? 'checked' : ''
+        }><span>${escapeHtml(file.name)}</span></label>`,
       )
-      .join('');
+      .join('')}`;
 
     const questionView =
       getQuestions()
@@ -956,10 +977,12 @@ export function createApp(root) {
       dashboard: `<section class="hero panel">
         <div>
           <p class="eyebrow">学习工作台</p>
-          <h2>${selectedFile ? '已选择本次学习资料' : '先去资料页上传并选择资料'}</h2>
-          <p class="muted">学习过程更专注</p>
+          <h2>${selectedFiles.length ? `已选择 ${selectedFiles.length} 份学习资料` : '先去资料页上传并选择资料'}</h2>
+          <p class="muted">支持多资料批量复习</p>
         </div>
-        <div class="hero-side"><strong>${selectedFile ? `当前资料：${escapeHtml(selectedFile.name)}` : '未选择资料'}</strong></div>
+        <div class="hero-side"><strong>${
+          selectedFiles.length ? `已选资料：${escapeHtml(selectedFiles.map((f) => f.name).join('、'))}` : '未选择资料'
+        }</strong></div>
       </section>
       ${card(
         '<div class="panel-head"><div><p class="section-tag">考试信息</p><h3>设置考试日期</h3></div></div>',
@@ -971,7 +994,7 @@ export function createApp(root) {
         <button class="stat-card panel" data-jump-route="cards"><div class="stat-card__top"><span>卡片历史</span><i>✦</i></div><strong>${state.cardsHistory.length}</strong><p>可直接复用</p></button>
         <article class="stat-card panel"><div class="stat-card__top"><span>倒计时</span><i>✦</i></div><strong>${daysLeft()}</strong><p>距考试</p></article>
       </section>
-      ${renderFilePicker('当前学习资料（只读选择）')}`,
+      ${renderFilePicker('当前学习资料（可多选）')}`,
 
       library: `${card(
         '<div class="panel-head"><div><p class="section-tag">上传资料</p><h3>仅此页面可增加和删除</h3></div></div>',
@@ -979,7 +1002,7 @@ export function createApp(root) {
           <input id="file-upload" type="file" multiple>
           <div class="upload-icon">↥</div>
           <strong>点击或拖拽上传资料</strong>
-          <p>支持一次选择或拖入多份文件；超过 ${UPLOAD_FILES_PER_REQUEST} 份将自动分批解析。在资料页管理资料；其他页面仅可单选资料。</p>
+          <p>支持一次选择或拖入多份文件；超过 ${UPLOAD_FILES_PER_REQUEST} 份将自动分批解析。在资料页管理资料；其他页面可多选资料批量复习。</p>
         </label>
         <label class="top-gap">
           <span class="field-label">老师补充笔记</span>
@@ -992,8 +1015,8 @@ export function createApp(root) {
           ? state.files
               .map(
                 (file) => `<div class="file-row">
-              <label class="pick ${selectedFile?.id === file.id ? 'on' : ''}">
-                <input type="radio" name="lib-file" data-file="${file.id}" ${selectedFile?.id === file.id ? 'checked' : ''}>
+              <label class="pick ${(state.selectedFileIds || []).includes(file.id) ? 'on' : ''}">
+                <input type="checkbox" name="lib-file" data-file="${file.id}" ${(state.selectedFileIds || []).includes(file.id) ? 'checked' : ''}>
                 <span class="file-meta"><span class="file-name">${escapeHtml(file.name)}</span><span class="file-size">${formatFileSize(
                   file.size,
                 )}</span></span>
@@ -1005,7 +1028,7 @@ export function createApp(root) {
           : '<p class="muted">上传后在这里管理资料。</p>',
       )}`,
 
-      knowledge: `${renderFilePicker('选择要梳理的资料', '<button class="gradient-btn" data-a="focus">生成重点</button>')}
+      knowledge: `${renderFilePicker('选择要梳理的资料（可多选）', '<button class="gradient-btn" data-a="focus">生成重点</button>')}
       ${
         !state.focus
           ? card('<p class="section-tag">知识解析</p><h3>还没有内容</h3>', '<p class="muted">选择资料后生成重点。</p>')
@@ -1054,7 +1077,7 @@ export function createApp(root) {
       }`,
 
       practice: `${renderFilePicker(
-        '选择本次刷题资料',
+        '选择本次刷题资料（可多选）',
         `<div class="practice-toolbar">
           <label><span class="field-label">难度</span><select data-setting="difficulty">${['简单', '中等', '困难']
             .map((v) => `<option value="${v}" ${state.settings.difficulty === v ? 'selected' : ''}>${v}</option>`)
@@ -1072,7 +1095,7 @@ export function createApp(root) {
         ${practiceDetailWrap}
       </div>`,
 
-      cards: `${renderFilePicker('选择要总结的资料', '<button class="gradient-btn" data-a="cards">生成卡片</button>')}
+      cards: `${renderFilePicker('选择要总结的资料（可多选）', '<button class="gradient-btn" data-a="cards">生成卡片</button>')}
       ${card('<div class="panel-head"><div><p class="section-tag">生成历史</p><h3>同资料可直接回看</h3></div></div>', cardHistoryList)}
       ${
         !state.cardsHistory.length
@@ -1098,8 +1121,8 @@ export function createApp(root) {
       }`,
 
       mistakes: `${card(
-        '<div class="panel-head"><div><p class="section-tag">筛选栏</p><h3>按资料区分错题本</h3></div></div>',
-        `<label><span class="field-label">资料</span><select data-filter="mistakes">${mistakeFilterOptions}</select></label>`,
+        '<div class="panel-head"><div><p class="section-tag">筛选栏</p><h3>按资料筛选错题本（可多选）</h3></div></div>',
+        `<span class="field-label">资料</span><div class="pick-list">${mistakeFilterOptions}</div>`,
       )}
       ${card(
         '<div class="panel-head"><div><p class="section-tag">错题列表</p><h3>对应资料错题本</h3></div></div>',
@@ -1139,23 +1162,23 @@ export function createApp(root) {
           : '<p class="muted">当前筛选下暂无错题。</p>',
       )}`,
 
-      plan: `${renderFilePicker('选择要用于计划的资料', '<button class="gradient-btn" data-a="plan">生成计划</button>')}
+      plan: `${renderFilePicker('选择要用于计划的资料（可多选）', '<button class="gradient-btn" data-a="plan">生成计划</button>')}
       ${
-        !selectedFile
+        !selectedFiles.length
           ? card(
               '<p class="section-tag">复习计划</p><h3>还没有内容</h3>',
-              '<p class="muted">请先上传资料并在上方选择一份资料，设置考试日期后点击「生成计划」。</p>',
+              '<p class="muted">请先上传资料并在上方选择至少一份资料，设置考试日期后点击「生成计划」。</p>',
             )
           : !planForSelected
             ? card(
                 '<p class="section-tag">复习计划</p><h3>尚未生成冲刺计划</h3>',
                 `<p class="muted">当前选中的资料「${escapeHtml(
-                  selectedFile.name,
-                )}」还没有对应的冲刺计划。请确认已设置考试日期，然后点击上方「生成计划」，即可<strong>仅针对该资料</strong>生成专属计划（不会影响其他资料已生成的计划）。</p>`,
+                  selectedFiles.map((f) => f.name).join('、'),
+                )}」还没有对应的冲刺计划。请确认已设置考试日期，然后点击上方「生成计划」，即可<strong>针对当前选中的多份资料</strong>生成一份综合计划（不同资料组合可分别保存）。</p>`,
               )
             : card(
                 '<div class="panel-head"><div><p class="section-tag">计划概览</p><h3>你的冲刺计划</h3></div></div>',
-                `<div class="result-box"><strong>资料：${escapeHtml(selectedFile.name)}</strong><br><strong>考试日期：${escapeHtml(
+                `<div class="result-box"><strong>资料：${escapeHtml(selectedFiles.map((f) => f.name).join('、'))}</strong><br><strong>考试日期：${escapeHtml(
                   state.settings.examDate || '未设置',
                 )}</strong><p class="muted">${escapeHtml(planForSelected.strategy || '')}</p></div>` +
                   (planForSelected.days || [])
@@ -1276,7 +1299,7 @@ export function createApp(root) {
     const keepMainScroll = state.route === hashRoute;
     state.route = hashRoute;
     const pages = renderPages();
-    const selected = getSelectedFile();
+    const selectedFiles = getSelectedFiles();
     const isAuth = state.route === 'auth';
     const focusCtx = captureFocusContext();
 
@@ -1300,7 +1323,7 @@ export function createApp(root) {
     const sidebarHtml = `<aside class="sidebar" aria-label="主导航">
         <div class="brand-block">
           <div class="brand-mark">AI</div>
-          <div><strong>AI期末复习助手</strong><p>单资料专注学习</p></div>
+          <div><strong>AI期末复习助手</strong><p>多资料批量复习</p></div>
         </div>
         <nav class="sidebar-nav">${tabs
           .filter(([id]) => id !== 'auth')
@@ -1311,7 +1334,7 @@ export function createApp(root) {
           .join('')}</nav>
         <div class="sidebar-panel">
           <small>当前资料</small>
-          <strong>${selected ? escapeHtml(selected.name) : '未选择'}</strong>
+          <strong>${selectedFiles.length ? `${selectedFiles.length} 份资料` : '未选择'}</strong>
           <small>当前账号</small>
           <strong>${isLoggedIn() ? escapeHtml(state.auth.user.email) : '访客模式'}</strong>
           <small>刷题记录</small>
@@ -1368,7 +1391,7 @@ export function createApp(root) {
           <div><p class="eyebrow">智能复习系统</p><h1>${routeTitle(state.route)}</h1></div>
           <div class="topbar-actions">
             <span class="top-chip">总资料 ${state.files.length}</span>
-            <span class="top-chip blue">单次仅选1份</span>
+            <span class="top-chip blue">支持多选批量</span>
             <button type="button" class="ghost-btn small-btn" data-toggle-ai-chat>AI答疑</button>
           </div>
         </header>
@@ -1626,7 +1649,7 @@ export function createApp(root) {
     if (event.target.id === 'file-upload') {
       upload(Array.from(event.target.files || []).filter((f) => f.size > 0));
     }
-    if (event.target.dataset.file) selectFile(event.target.dataset.file);
+    if (event.target.dataset.file) toggleSelectFile(event.target.dataset.file);
     if (event.target.dataset.setting) {
       state.settings[event.target.dataset.setting] = event.target.value;
       save();
@@ -1637,7 +1660,16 @@ export function createApp(root) {
       save();
     }
     if (event.target.dataset.filter === 'mistakes') {
-      state.mistakesFilter = event.target.value;
+      const value = String(event.target.value || '');
+      const checked = Boolean(event.target.checked);
+      if (value === 'all') {
+        state.mistakesFilter = [];
+      } else {
+        const next = new Set((state.mistakesFilter || []).filter((x) => x !== 'all'));
+        if (checked) next.add(value);
+        else next.delete(value);
+        state.mistakesFilter = [...next];
+      }
       save();
       render();
     }
