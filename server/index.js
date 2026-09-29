@@ -33,7 +33,35 @@ const smtpUser = process.env.SMTP_USER || '';
 const smtpPass = process.env.SMTP_PASS || '';
 const mailFrom = process.env.MAIL_FROM || smtpUser;
 const canSendMail = Boolean(smtpHost && smtpUser && smtpPass && mailFrom);
+// Resend 海外邮件 API：部署到境外平台时国内 SMTP（163/QQ）不可达，优先走 Resend
+const resendApiKey = process.env.RESEND_API_KEY || '';
+const resendFrom = process.env.RESEND_FROM || mailFrom;
 const MAX_AI_INPUT_CHARS = Number(process.env.AI_INPUT_MAX_CHARS || 18000);
+
+/**
+ * 统一邮件发送：配置了 RESEND_API_KEY 时走 Resend API，否则走 SMTP（nodemailer）。
+ */
+async function sendMailSafe({ to, subject, text, html }) {
+  if (resendApiKey) {
+    const resp = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${resendApiKey}`,
+      },
+      body: JSON.stringify({ from: resendFrom, to: [to], subject, text, html }),
+    });
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      const error = new Error(`邮件服务发送失败（Resend HTTP ${resp.status}）：${String(body).slice(0, 200)}`);
+      error.status = 502;
+      throw error;
+    }
+    return;
+  }
+  await ensureMailerReady();
+  await mailTransporter.sendMail({ from: mailFrom, to, subject, text, html });
+}
 
 let mailTransporter = null;
 let mailInit = Promise.resolve();
@@ -363,7 +391,6 @@ app.post('/api/auth/register', async (req, res, next) => {
 
 app.post('/api/auth/send-register-code', async (req, res, next) => {
   try {
-    await ensureMailerReady();
     const email = normalizeEmail(req.body?.email);
     if (!isValidEmail(email)) {
       const error = new Error('请输入有效邮箱');
@@ -387,8 +414,7 @@ app.post('/api/auth/send-register-code', async (req, res, next) => {
     });
     await writeUsers(usersWithoutRegisterCode);
 
-    await mailTransporter.sendMail({
-      from: mailFrom,
+    await sendMailSafe({
       to: email,
       subject: 'AI期末复习助手 - 注册验证码',
       text: `你的注册验证码是：${code}\n10分钟内有效。如非本人操作请忽略。`,
@@ -470,7 +496,6 @@ app.post('/api/auth/login', async (req, res, next) => {
 
 app.post('/api/auth/send-reset-code', async (req, res, next) => {
   try {
-    await ensureMailerReady();
     const email = normalizeEmail(req.body?.email);
     if (!isValidEmail(email)) {
       const error = new Error('请输入有效邮箱');
@@ -490,8 +515,7 @@ app.post('/api/auth/send-reset-code', async (req, res, next) => {
     user.resetRequestedAt = new Date().toISOString();
     await writeUsers(users);
 
-    await mailTransporter.sendMail({
-      from: mailFrom,
+    await sendMailSafe({
       to: email,
       subject: 'AI期末复习助手 - 密码重置验证码',
       text: `你的验证码是：${code}\n10分钟内有效。如非本人操作请忽略。`,
