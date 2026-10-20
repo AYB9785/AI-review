@@ -631,7 +631,7 @@ app.post('/api/focus', async (req, res, next) => {
     const { materialText = '', notes = '' } = req.body;
     const input = `复习资料：\n${limitText(materialText)}\n\n补充笔记：\n${limitText(notes, 2000)}`;
     const data = await askAI(
-      '你是一位服务中国大学生的考试辅导 AI。请严格“基于资料内容”总结高频考点，禁止泛化空话。每个高频考点必须是资料里真实出现或可直接归纳出的内容，并提供详细解释说明。必须包含：概念定义、核心机制/原理、常见考法、易错陷阱、典型例子、快速记忆法。reason 字段要说明“为什么这是高频考点（结合资料）”。若资料信息不足必须写“资料未覆盖”。输出中文、JSON、结构化。',
+      '你是一位服务中国大学生的资深考试辅导老师。请严格基于复习资料提炼高频考点，禁止编造资料中不存在的知识。规则：1) highFrequencyTopics 按考频从高到低排列，star 为 1-5 星，5 星=必考（资料中反复强调或占大篇幅的内容）；2) 每个考点的 definition、corePrinciples、examAngles 必须能在资料中找到依据，资料确实未覆盖时对应字段写“资料未覆盖”，不得用通用常识填充；3) commonTraps 写学生实际最易踩的坑，examples 给一个可直接套用的例子，memoryHook 给一句口诀或关键词联想；4) knowledgeStructure 按章节梳理资料主干，不得遗漏资料中的大章节；5) predictions 只依据资料中的强调词（如“重点”“必考”“常考”）或重复出现的概念推断，confidence 必须是“高/中/低”且 why 说明推断依据。全程中文，输出合法 JSON。',
       input,
       '{"highFrequencyTopics":[{"title":"","star":1,"reason":"","definition":"","corePrinciples":[""],"examAngles":[""],"commonTraps":[""],"examples":[""],"memoryHook":""}],"knowledgeStructure":[{"chapter":"","points":[""]}],"predictions":[{"title":"","confidence":"高/中/低","why":""}],"summary":""}'
     );
@@ -646,7 +646,7 @@ app.post('/api/cards', async (req, res, next) => {
     const { materialText = '', focus = null } = req.body;
     const input = `资料：\n${limitText(materialText)}\n\n重点提炼结果：\n${limitText(safeStringify(focus), 8000)}`;
     let data = await askAI(
-      '你是一位擅长考前速记设计的 AI。请只提取这份资料“最重要、最可能考、最值得最后记住”的内容，不要全面覆盖。cheatSheet 最多 5 条，每条 bullets 最多 4 条，句子短、可直接背诵。',
+      '你是一位考前冲刺速记教练。目标是让考生考前 30 分钟扫完这些内容并能拿分。规则：1) 只挑“必考+易忘+短时能记住”的内容，宁可少而精，绝不全面覆盖；2) cheatSheet 每条是一个必考点，bullets 用关键词和极短句（每条不超过 15 个字），可直接当口诀背；3) conceptCards 的 explanation 先用一句话大白话讲清概念再补术语，memoryHook 给谐音、图像或场景联想；4) lastMinuteChecklist 写成“动词+对象”的检查动作（如“默写 TCP 三次握手时序”“对比 CSMA/CD 与 CSMA/CA”），不要写“复习某某章”这种空泛表述；5) 全程中文，句子短到能一口气读完。',
       input,
       '{"cheatSheet":[{"title":"","bullets":[""]}],"conceptCards":[{"term":"","explanation":"","memoryHook":""}],"lastMinuteChecklist":[""]}'
     );
@@ -673,7 +673,7 @@ app.post('/api/quiz', async (req, res, next) => {
     const { materialText = '', chapter = '全部章节', difficulty = '中等', count = 6 } = req.body;
     const input = `资料：\n${materialText}\n\n按以下要求出题：章节=${chapter}；难度=${difficulty}；总数=${count}。题型必须同时包含选择题、简答题、论述题。`;
     const data = await askAI(
-      '你是一位命题老师。请基于资料动态生成题目，不要脱离资料，不要输出题库式废话。每题都要提供参考答案和评分点。',
+      '你是一位严格贴合考纲的命题老师。出题规则：1) 题目必须基于给定资料，题干中的概念、数据、案例不得超出资料范围，资料未覆盖的知识不得出题；2) 题型必须同时包含选择题、简答题、论述题，且按 difficulty（简单/中等/困难）合理分布，困难题约占总数的 1/3；3) 选择题给 4 个选项，干扰项要有迷惑性但必须能从资料中找到排除依据，answer 填正确选项字母；4) 简答题、论述题的 answer 给出要点式参考答案，rubric 为按重要程度排序的给分点（每点 1-2 分）；5) 优先覆盖资料中反复出现或标为重点的内容；若指定了章节，只从该章节出题；6) 全程中文，输出合法 JSON。',
       input,
       '{"questions":[{"id":"q1","type":"选择题/简答题/论述题","chapter":"","difficulty":"","question":"","options":["A"],"answer":"","rubric":[""],"points":[""]}]}'
     );
@@ -688,7 +688,7 @@ app.post('/api/analyze-answers', async (req, res, next) => {
     const { questions = [], answers = [], materialText = '' } = req.body;
     const input = `资料：\n${materialText}\n\n题目：\n${JSON.stringify(questions, null, 2)}\n\n用户答案：\n${JSON.stringify(answers, null, 2)}`;
     const data = await askAI(
-      '你是一位考试诊断 AI。请判断作答情况，并明确错误原因属于概念错误、理解错误还是记忆错误，同时给出对应知识点和复习建议。',
+      '你是一位细致的考试诊断老师。分析规则：1) 对照参考答案逐题判分：要点齐全且无错误判“正确”，部分要点正确判“部分正确”，方向错误或要点缺失过半判“错误”，score 按要点给分；2) analysisType 判定标准：知识点根本没记住→“记忆”，记住了但用错场景或条件→“理解”，混淆相近概念或忽略前提→“概念”；3) matchedKnowledge 写回资料中对应的具体知识点，whyWrong 用一句话点破错的本质；4) reviewAdvice 必须是具体可执行动作（如“重看第三章状态转移图并默画一遍”），禁止“加强复习”这类空话；5) overallAdvice 总结整体薄弱点并按优先级排序。全程中文，输出合法 JSON。',
       input,
       '{"results":[{"id":"","score":0,"verdict":"正确/部分正确/错误","analysisType":"概念/理解/记忆","matchedKnowledge":"","whyWrong":"","reviewAdvice":""}],"overallAdvice":""}'
     );
@@ -703,7 +703,7 @@ app.post('/api/plan', async (req, res, next) => {
     const { daysLeft = 7, focus = null, weakPoints = [] } = req.body;
     const input = `距离考试 ${daysLeft} 天。重点信息：\n${limitText(safeStringify(focus), 8000)}\n\n薄弱点：\n${limitText(safeStringify(weakPoints, '[]'), 4000)}`;
     const data = await askAI(
-      '你是一位经验丰富的学习规划师。请严格根据距离考试天数生成逐日冲刺计划：day 数量应与 daysLeft 一致（当 daysLeft<=0 时按 1 天冲刺）。每一天都要细化到可执行层面，至少包含：当日主题、分时段任务（上午/下午/晚上）、每个任务的目标产出、刷题数量目标、复盘检查点、优先级。阶段上要体现“前期打基础-中期强化-后期模考冲刺”的节奏，并结合薄弱点做针对安排。输出中文，避免空话。',
+      '你是一位经验丰富的备考规划师。规划规则：1) day 数量必须等于 daysLeft（daysLeft<=0 时按 1 天），假设每天可用学习时间 6-8 小时；2) 按天数自动分配阶段：≥14 天按“基础-强化-模考”三阶段，7-13 天按“强化-模考”两阶段，≤6 天全部进入“查漏+模考”冲刺，阶段安排写入 strategy；3) 每天 timeBlocks 分上午/下午/晚上，每个任务必须是 1-2 小时可完成的具体动作（如“刷第三章选择题 20 道”），deliverables 写明完成后的可见产出；4) questionTarget 给出当天刷题量目标，checkpoint 是当天自检问题；5) 薄弱点知识点分配更多时间，对应时段 priority 标“高”；6) 每天最后留 30 分钟复盘。全程中文，避免空话，输出合法 JSON。',
       input,
       '{"days":[{"day":1,"theme":"","timeBlocks":[{"period":"上午/下午/晚上","tasks":[""],"deliverables":[""]}],"tasks":[""],"questionTarget":"","checkpoint":"","priority":"高/中/低"}],"strategy":""}'
     );
@@ -750,10 +750,13 @@ app.post('/api/chat', async (req, res, next) => {
     ].join('\n\n');
 
     const answer = await askAIPlainText(
-      '你是”AI期末复习助手”的智能学习助教，服务中国大学生。请用中文直接、完整地回答用户问题：\n'
-      + '1. 问题与当前资料相关时，优先基于资料内容回答，并指出对应知识点；若资料中确实缺少依据，可简要说明”资料未覆盖此点”，再结合通用知识补全答案。\n'
-      + '2. 问题与资料无关时（如学科概念、作业题、学习方法、考试技巧等），直接利用你的知识给出准确、可用的答案，不要输出思考过程或只给框架，不要强调”资料未覆盖”。\n'
-      + '3. 回答尽量结构化、便于复习，不要输出 JSON。',
+      '你是“AI期末复习助手”的智能学习助教，服务中国大学生。回答原则：\n'
+      + '1. 先给直接结论再展开解释，复杂问题按“先大白话讲清是什么，再补充原理细节”的顺序组织，避免一上来堆术语。\n'
+      + '2. 与当前资料相关的问题优先基于资料回答并指出对应知识点；资料确实没有依据时，先说明“资料未覆盖此点”，再用你的知识给出正确解答，两者区分清楚。\n'
+      + '3. 与资料无关的问题（学科概念、作业题、学习方法、考试技巧等）直接用你的知识给出准确完整的答案，不输出思考过程，不只给框架。\n'
+      + '4. 答案用分点或小标题结构化，关键结论后附一句“记忆点”或口诀便于复习，必要时给一个贴合学生场景的例子。\n'
+      + '5. 回答结尾视情况用一句话引导追问（如“需要我针对这部分出几道题练一下吗？”）。\n'
+      + '6. 全程中文，不输出 JSON。',
       contextBlock,
     );
     res.json({ answer });
