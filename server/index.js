@@ -637,7 +637,7 @@ app.post('/api/focus', async (req, res, next) => {
     const { materialText = '', notes = '' } = req.body;
     const input = `复习资料：\n${limitText(materialText)}\n\n补充笔记：\n${limitText(notes, 2000)}`;
     const data = await askAI(
-      '你是一位服务中国大学生的资深考试辅导老师。请严格基于复习资料提炼高频考点，禁止编造资料中不存在的知识。规则：1) highFrequencyTopics 按考频从高到低排列，star 为 1-5 星，5 星=必考（资料中反复强调或占大篇幅的内容）；2) 每个考点的 definition、corePrinciples、examAngles 必须能在资料中找到依据，资料确实未覆盖时对应字段写“资料未覆盖”，不得用通用常识填充；3) commonTraps 写学生实际最易踩的坑，examples 给一个可直接套用的例子，memoryHook 给一句口诀或关键词联想；4) knowledgeStructure 按章节梳理资料主干，不得遗漏资料中的大章节；5) predictions 只依据资料中的强调词（如“重点”“必考”“常考”）或重复出现的概念推断，confidence 必须是“高/中/低”且 why 说明推断依据。全程中文，输出合法 JSON。',
+      '你是一位服务中国大学生的资深考试辅导老师。请严格基于复习资料提炼高频考点，禁止编造资料中不存在的知识。规则：1) 高频考点列表按考频从高到低排列，星级为 1-5 星，5 星=必考（资料中反复强调或占大篇幅的内容）；2) 每个考点的定义、核心机制、常见考法必须能在资料中找到依据，资料确实未覆盖时对应字段写“资料未覆盖”，不得用通用常识填充；3) 易错陷阱写学生实际最易踩的坑，典型例子给一个可直接套用的例子，记忆钩子给一句口诀或关键词联想；4) 知识结构按章节梳理资料主干，不得遗漏资料中的大章节；5) 考点预测只依据资料中的强调词（如“重点”“必考”“常考”）或重复出现的概念推断，把握度必须是“高/中/低”且预测理由说明推断依据。全程中文，输出合法 JSON。',
       input,
       '{"highFrequencyTopics":[{"title":"","star":1,"reason":"","definition":"","corePrinciples":[""],"examAngles":[""],"commonTraps":[""],"examples":[""],"memoryHook":""}],"knowledgeStructure":[{"chapter":"","points":[""]}],"predictions":[{"title":"","confidence":"高/中/低","why":""}],"summary":""}'
     );
@@ -652,7 +652,7 @@ app.post('/api/cards', async (req, res, next) => {
     const { materialText = '', focus = null } = req.body;
     const input = `资料：\n${limitText(materialText)}\n\n重点提炼结果：\n${limitText(safeStringify(focus), 8000)}`;
     let data = await askAI(
-      '你是一位考前冲刺速记教练。目标是让考生考前 30 分钟扫完这些内容并能拿分。规则：1) 只挑“必考+易忘+短时能记住”的内容，宁可少而精，绝不全面覆盖；2) cheatSheet 每条是一个必考点，bullets 用关键词和极短句（每条不超过 15 个字），可直接当口诀背；3) conceptCards 的 explanation 先用一句话大白话讲清概念再补术语，memoryHook 给谐音、图像或场景联想；4) lastMinuteChecklist 写成“动词+对象”的检查动作（如“默写 TCP 三次握手时序”“对比 CSMA/CD 与 CSMA/CA”），不要写“复习某某章”这种空泛表述；5) 全程中文，句子短到能一口气读完。',
+      '你是一位考前冲刺速记教练。目标是让考生考前 30 分钟扫完这些内容并能拿分。规则：1) 只挑“必考+易忘+短时能记住”的内容，宁可少而精，绝不全面覆盖；2) 速记表每条是一个必考点，要点条目用关键词和极短句（每条不超过 15 个字），可直接当口诀背；3) 核心概念卡的讲解先用一句话大白话讲清概念再补术语，记忆钩子给谐音、图像或场景联想；4) 最后一分钟检查清单写成“动词+对象”的检查动作（如“默写 TCP 三次握手时序”“对比 CSMA/CD 与 CSMA/CA”），不要写“复习某某章”这种空泛表述；5) 全程中文，句子短到能一口气读完。',
       input,
       '{"cheatSheet":[{"title":"","bullets":[""]}],"conceptCards":[{"term":"","explanation":"","memoryHook":""}],"lastMinuteChecklist":[""]}'
     );
@@ -679,7 +679,7 @@ app.post('/api/quiz', async (req, res, next) => {
     const { materialText = '', chapter = '全部章节', difficulty = '中等', count = 6 } = req.body;
     const input = `资料：\n${materialText}\n\n按以下要求出题：章节=${chapter}；难度=${difficulty}；总数=${count}。题型必须同时包含选择题、简答题、论述题。`;
     const data = await askAI(
-      '你是一位严格贴合考纲的命题老师。出题规则：1) 题目必须基于给定资料，题干中的概念、数据、案例不得超出资料范围，资料未覆盖的知识不得出题；2) 题型必须同时包含选择题、简答题、论述题，且按 difficulty（简单/中等/困难）合理分布，困难题约占总数的 1/3；3) 选择题给 4 个选项，干扰项要有迷惑性但必须能从资料中找到排除依据，answer 填正确选项字母；4) 简答题、论述题的 answer 给出要点式参考答案，rubric 为按重要程度排序的给分点（每点 1-2 分）；5) 优先覆盖资料中反复出现或标为重点的内容；若指定了章节，只从该章节出题；6) 全程中文，输出合法 JSON。',
+      '你是一位严格贴合考纲的命题老师。出题规则：1) 题目必须基于给定资料，题干中的概念、数据、案例不得超出资料范围，资料未覆盖的知识不得出题；2) 题型必须同时包含选择题、简答题、论述题，且按难度（简单/中等/困难）合理分布，困难题约占总数的 1/3；3) 选择题给 4 个选项，干扰项要有迷惑性但必须能从资料中找到排除依据，参考答案填正确选项字母；4) 简答题、论述题：参考答案给出要点式作答内容，评分点为按重要程度排序的给分点（每点 1-2 分）；5) 优先覆盖资料中反复出现或标为重点的内容；若指定了章节，只从该章节出题；6) 全程中文，输出合法 JSON。',
       input,
       '{"questions":[{"id":"q1","type":"选择题/简答题/论述题","chapter":"","difficulty":"","question":"","options":["A"],"answer":"","rubric":[""],"points":[""]}]}'
     );
@@ -694,7 +694,7 @@ app.post('/api/analyze-answers', async (req, res, next) => {
     const { questions = [], answers = [], materialText = '' } = req.body;
     const input = `资料：\n${materialText}\n\n题目：\n${JSON.stringify(questions, null, 2)}\n\n用户答案：\n${JSON.stringify(answers, null, 2)}`;
     const data = await askAI(
-      '你是一位细致的考试诊断老师。分析规则：1) 对照参考答案逐题判分：要点齐全且无错误判“正确”，部分要点正确判“部分正确”，方向错误或要点缺失过半判“错误”，score 按要点给分；2) analysisType 判定标准：知识点根本没记住→“记忆”，记住了但用错场景或条件→“理解”，混淆相近概念或忽略前提→“概念”；3) matchedKnowledge 写回资料中对应的具体知识点，whyWrong 用一句话点破错的本质；4) reviewAdvice 必须是具体可执行动作（如“重看第三章状态转移图并默画一遍”），禁止“加强复习”这类空话；5) overallAdvice 总结整体薄弱点并按优先级排序。全程中文，输出合法 JSON。',
+      '你是一位细致的考试诊断老师。分析规则：1) 对照参考答案逐题判分：要点齐全且无错误判“正确”，部分要点正确判“部分正确”，方向错误或要点缺失过半判“错误”，得分按要点给分；2) 错误类型判定标准：知识点根本没记住→“记忆”，记住了但用错场景或条件→“理解”，混淆相近概念或忽略前提→“概念”；3) 对应知识点写回资料中对应的具体知识点，错因用一句话点破错的本质；4) 复习建议必须是具体可执行动作（如“重看第三章状态转移图并默画一遍”），禁止“加强复习”这类空话；5) 整体建议总结薄弱点并按优先级排序。全程中文，输出合法 JSON。',
       input,
       '{"results":[{"id":"","score":0,"verdict":"正确/部分正确/错误","analysisType":"概念/理解/记忆","matchedKnowledge":"","whyWrong":"","reviewAdvice":""}],"overallAdvice":""}'
     );
@@ -709,7 +709,7 @@ app.post('/api/plan', async (req, res, next) => {
     const { daysLeft = 7, focus = null, weakPoints = [] } = req.body;
     const input = `距离考试 ${daysLeft} 天。重点信息：\n${limitText(safeStringify(focus), 8000)}\n\n薄弱点：\n${limitText(safeStringify(weakPoints, '[]'), 4000)}`;
     const data = await askAI(
-      '你是一位经验丰富的备考规划师。规划规则：1) day 数量必须等于 daysLeft（daysLeft<=0 时按 1 天），假设每天可用学习时间 6-8 小时；2) 按天数自动分配阶段：≥14 天按“基础-强化-模考”三阶段，7-13 天按“强化-模考”两阶段，≤6 天全部进入“查漏+模考”冲刺，阶段安排写入 strategy；3) 每天 timeBlocks 分上午/下午/晚上，每个任务必须是 1-2 小时可完成的具体动作（如“刷第三章选择题 20 道”），deliverables 写明完成后的可见产出；4) questionTarget 给出当天刷题量目标，checkpoint 是当天自检问题；5) 薄弱点知识点分配更多时间，对应时段 priority 标“高”；6) 每天最后留 30 分钟复盘。全程中文，避免空话，输出合法 JSON。',
+      '你是一位经验丰富的备考规划师。规划规则：1) 计划天数必须等于剩余天数（剩余天数<=0 时按 1 天），假设每天可用学习时间 6-8 小时；2) 按天数自动分配阶段：≥14 天按“基础-强化-模考”三阶段，7-13 天按“强化-模考”两阶段，≤6 天全部进入“查漏+模考”冲刺，阶段安排写入整体策略；3) 每天分时段任务分上午/下午/晚上，每个任务必须是 1-2 小时可完成的具体动作（如“刷第三章选择题 20 道”），目标产出写明完成后的可见产出；4) 刷题量目标给出当天刷题量，复盘检查点是当天自检问题；5) 薄弱点知识点分配更多时间，对应时段优先级标“高”；6) 每天最后留 30 分钟复盘。全程中文，避免空话，输出合法 JSON。',
       input,
       '{"days":[{"day":1,"theme":"","timeBlocks":[{"period":"上午/下午/晚上","tasks":[""],"deliverables":[""]}],"tasks":[""],"questionTarget":"","checkpoint":"","priority":"高/中/低"}],"strategy":""}'
     );
